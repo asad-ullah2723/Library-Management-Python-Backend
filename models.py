@@ -1,10 +1,13 @@
-from pydantic import BaseModel
+from sqlalchemy import Column, Integer, String, Float, Date
+from datetime import date
+from database import Base
 
-class Book:
-    id_counter = 1
+class Book(Base):
+    __tablename__ = "books"
 
-    def __init__(self, title: str, author: str):
-        self.id = Book.id_counter
-        self.title = title
-        self.author = author
-        Book.id_counter += 1
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False, index=True)
+    author = Column(String, nullable=False, index=True)
+    isbn = Column(String, unique=True, index=True)
+    price = Column(Float, nullable=True)
+    published_date = Column(Date, default=date.today)
