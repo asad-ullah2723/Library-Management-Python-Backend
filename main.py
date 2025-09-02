@@ -39,8 +39,6 @@ async def log_requests(request, call_next):
     response = await call_next(request)
     print(f"Response status: {response.status_code}")
     return response
-
-# Create tables on startup
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
