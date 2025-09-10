@@ -25,6 +25,13 @@ def delete_book(book_id: int, db: Session) -> bool:
     db.commit()
     return True
 
+def get_books(db: Session, skip: int = 0, limit: int = 100) -> List[Book]:
+    """
+    Retrieve all books with optional pagination
+    """
+    return db.query(Book).offset(skip).limit(limit).all()
+
+
 def search_books(
     title: Optional[str] = None,
     author: Optional[str] = None,
