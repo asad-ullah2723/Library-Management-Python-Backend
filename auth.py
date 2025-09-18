@@ -53,20 +53,38 @@ async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Generate access token
+    # Determine role string: prefer user.role (enum) if available, else fall back to is_superuser flag
+    role_str = None
+    try:
+        # If models.User has a role enum attribute
+        role_attr = getattr(user, 'role', None)
+        if role_attr is not None:
+            # If it's an enum, use .value, otherwise str()
+            role_str = getattr(role_attr, 'value', None) or str(role_attr)
+    except Exception:
+        role_str = None
+
+    if not role_str:
+        # Fall back to is_superuser boolean (older schema) or default to 'member'
+        try:
+            role_str = 'admin' if getattr(user, 'is_superuser', False) else 'member'
+        except Exception:
+            role_str = 'member'
+
+    # Create access token including role/scopes
     access_token_expires = timedelta(minutes=auth_utils.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth_utils.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": role_str},
+        expires_delta=access_token_expires
     )
-    
-    response_data = {
-        "access_token": access_token, 
+
+    return {
+        "access_token": access_token,
         "token_type": "bearer",
         "user_id": user.id,
-        "email": user.email
+        "email": user.email,
+        "role": role_str
     }
-    print(f"Login successful for user: {user.email}")
-    print(f"Response data: {response_data}")
     
     return response_data
 
@@ -116,9 +134,34 @@ async def reset_password(
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-@router.get("/me", response_model=auth_schemas.UserInDB)
+@router.get("/me")
 async def read_users_me(current_user: models.User = Depends(auth_utils.get_current_active_user)):
-    return current_user
+    # Compute role string similarly to the login endpoint
+    role_str = None
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        if role_attr is not None:
+            role_str = getattr(role_attr, 'value', None) or str(role_attr)
+    except Exception:
+        role_str = None
+
+    if not role_str:
+        try:
+            role_str = 'admin' if getattr(current_user, 'is_superuser', False) else 'member'
+        except Exception:
+            role_str = 'member'
+
+    # Build response dict (include commonly used fields and the computed role)
+    resp = {
+        'id': getattr(current_user, 'id', None),
+        'email': getattr(current_user, 'email', None),
+        'full_name': getattr(current_user, 'full_name', None),
+        'is_active': getattr(current_user, 'is_active', None),
+        'is_superuser': getattr(current_user, 'is_superuser', False),
+        'created_at': getattr(current_user, 'created_at', None),
+        'role': role_str,
+    }
+    return resp
 
 @router.post("/logout")
 async def logout():
