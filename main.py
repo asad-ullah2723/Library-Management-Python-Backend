@@ -12,6 +12,8 @@ from schemas import MemberCreate, MemberOut, MemberUpdate
 from crud import add_member, get_members, get_member_by_id, update_member, delete_member
 from schemas import StaffCreate, StaffOut, StaffUpdate
 from crud import add_staff, get_staff, get_staff_by_id, update_staff, delete_staff
+from crud import add_transaction, get_transaction_by_id, list_transactions, update_transaction, delete_transaction
+from schemas import TransactionCreate, TransactionOut
 from database import get_db, engine, Base
 import models  # ensure models are imported so tables are registered
 from auth import router as auth_router
@@ -221,6 +223,47 @@ def remove_staff(staff_id: int, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=404, detail="Staff not found")
     return {"detail": "Staff deleted"}
+
+
+# Transactions endpoints
+@app.get("/transactions/", response_model=List[TransactionOut])
+def list_txns(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return list_transactions(db, skip=skip, limit=limit)
+
+
+@app.post("/transactions/", response_model=TransactionOut)
+def create_txn(txn: TransactionCreate, db: Session = Depends(get_db)):
+    try:
+        return add_transaction(txn, db)
+    except Exception as e:
+        import traceback
+        print("Error creating transaction:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/transactions/{txn_id}", response_model=TransactionOut)
+def retrieve_txn(txn_id: int, db: Session = Depends(get_db)):
+    t = get_transaction_by_id(txn_id, db)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return t
+
+
+@app.put("/transactions/{txn_id}", response_model=TransactionOut)
+def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db)):
+    updated = update_transaction(txn_id, txn, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return updated
+
+
+@app.delete("/transactions/{txn_id}")
+def remove_txn(txn_id: int, db: Session = Depends(get_db)):
+    ok = delete_transaction(txn_id, db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"detail": "Transaction deleted"}
 
 # Add this to run the application directly
 if __name__ == "__main__":

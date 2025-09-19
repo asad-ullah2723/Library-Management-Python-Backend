@@ -64,3 +64,18 @@ class Staff(Base):
     shift_timings = Column(String, nullable=True)  # store as text like "09:00-17:00" or JSON
     assigned_responsibilities = Column(String, nullable=True)  # JSON string or comma-separated
     created_at = Column(Date, default=datetime.utcnow)
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(String, unique=True, index=True, nullable=False)
+    member_id = Column(Integer, index=True, nullable=False)
+    book_id = Column(Integer, index=True, nullable=False)
+    issue_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=False)
+    return_date = Column(Date, nullable=True)
+    fine_details = Column(String, nullable=True)  # JSON string or text describing fines
+    renewal_count = Column(Integer, default=0)
+    created_at = Column(Date, default=datetime.utcnow)

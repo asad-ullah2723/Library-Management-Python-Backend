@@ -74,3 +74,24 @@ class StaffOut(StaffBase):
     id: int
     created_at: Optional[date] = None
     model_config = ConfigDict(from_attributes=True)
+
+
+class TransactionBase(BaseModel):
+    transaction_id: str
+    member_id: int
+    book_id: int
+    issue_date: date
+    due_date: date
+    return_date: Optional[date] = None
+    fine_details: Optional[str] = None
+    renewal_count: Optional[int] = 0
+
+
+class TransactionCreate(TransactionBase):
+    pass
+
+
+class TransactionOut(TransactionBase):
+    id: int
+    created_at: Optional[date] = None
+    model_config = ConfigDict(from_attributes=True)

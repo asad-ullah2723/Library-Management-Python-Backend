@@ -224,3 +224,68 @@ def delete_staff(staff_id: int, db: Session) -> bool:
     db.delete(staff)
     db.commit()
     return True
+
+
+# --- Transaction CRUD ---
+from models import Transaction as Txn
+
+def add_transaction(txn_data, db: Session) -> Txn:
+    # ensure uniqueness of transaction_id
+    exists = db.query(Txn).filter(Txn.transaction_id == txn_data.transaction_id).first()
+    if exists:
+        raise ValueError("Transaction with this transaction_id already exists.")
+    new_txn = Txn(
+        transaction_id=txn_data.transaction_id,
+        member_id=txn_data.member_id,
+        book_id=txn_data.book_id,
+        issue_date=txn_data.issue_date,
+        due_date=txn_data.due_date,
+        return_date=txn_data.return_date,
+        fine_details=txn_data.fine_details,
+        renewal_count=txn_data.renewal_count,
+    )
+    db.add(new_txn)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        raise ValueError(msg)
+    db.refresh(new_txn)
+    return new_txn
+
+
+def get_transaction_by_id(txn_id: int, db: Session) -> Optional[Txn]:
+    return db.query(Txn).filter(Txn.id == txn_id).first()
+
+
+def list_transactions(db: Session, skip: int = 0, limit: int = 100) -> List[Txn]:
+    return db.query(Txn).offset(skip).limit(limit).all()
+
+
+def update_transaction(txn_id: int, txn_data, db: Session) -> Optional[Txn]:
+    txn = db.query(Txn).filter(Txn.id == txn_id).first()
+    if not txn:
+        return None
+    data = txn_data.__dict__
+    for key, value in data.items():
+        if value is not None:
+            setattr(txn, key, value)
+    db.add(txn)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        raise ValueError(msg)
+    db.refresh(txn)
+    return txn
+
+
+def delete_transaction(txn_id: int, db: Session) -> bool:
+    txn = db.query(Txn).filter(Txn.id == txn_id).first()
+    if not txn:
+        return False
+    db.delete(txn)
+    db.commit()
+    return True
