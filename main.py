@@ -7,7 +7,11 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from schemas import BookCreate, BookOut
-from crud import add_book, delete_book, search_books, get_books
+from crud import add_book, delete_book, search_books, get_books, get_book_by_id, update_book
+from schemas import MemberCreate, MemberOut, MemberUpdate
+from crud import add_member, get_members, get_member_by_id, update_member, delete_member
+from schemas import StaffCreate, StaffOut, StaffUpdate
+from crud import add_staff, get_staff, get_staff_by_id, update_staff, delete_staff
 from database import get_db, engine, Base
 import models  # ensure models are imported so tables are registered
 from auth import router as auth_router
@@ -78,7 +82,14 @@ def list_books(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 
 @app.post("/books/", response_model=BookOut)
 def create_book(book: BookCreate, db: Session = Depends(get_db)):
-    return add_book(book, db)
+    try:
+        return add_book(book, db)
+    except Exception as e:
+        # Log and convert to HTTP error so clients see a concise message
+        import traceback
+        print("Error creating book:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/books/{book_id}")
 def remove_book(book_id: int, db: Session = Depends(get_db)):
@@ -125,6 +136,91 @@ def search(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/books/{book_id}", response_model=BookOut)
+def retrieve_book(book_id: int, db: Session = Depends(get_db)):
+    b = get_book_by_id(book_id, db)
+    if not b:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return b
+
+
+@app.put("/books/{book_id}", response_model=BookOut)
+def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db)):
+    updated = update_book(book_id, book, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return updated
+
+
+@app.get("/members/", response_model=List[MemberOut])
+def list_members(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """List members with pagination"""
+    return get_members(db, skip=skip, limit=limit)
+
+
+@app.post("/members/", response_model=MemberOut)
+def create_member(member: MemberCreate, db: Session = Depends(get_db)):
+    return add_member(member, db)
+
+
+@app.get("/members/{member_id}", response_model=MemberOut)
+def retrieve_member(member_id: int, db: Session = Depends(get_db)):
+    m = get_member_by_id(member_id, db)
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return m
+
+
+@app.put("/members/{member_id}", response_model=MemberOut)
+def modify_member(member_id: int, member: MemberUpdate, db: Session = Depends(get_db)):
+    updated = update_member(member_id, member, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return updated
+
+
+@app.delete("/members/{member_id}")
+def remove_member(member_id: int, db: Session = Depends(get_db)):
+    ok = delete_member(member_id, db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"detail": "Member deleted"}
+
+
+@app.get("/staff/", response_model=List[StaffOut])
+def list_staff(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return get_staff(db, skip=skip, limit=limit)
+
+
+@app.post("/staff/", response_model=StaffOut)
+def create_staff(staff: StaffCreate, db: Session = Depends(get_db)):
+    return add_staff(staff, db)
+
+
+@app.get("/staff/{staff_id}", response_model=StaffOut)
+def retrieve_staff(staff_id: int, db: Session = Depends(get_db)):
+    s = get_staff_by_id(staff_id, db)
+    if not s:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    return s
+
+
+@app.put("/staff/{staff_id}", response_model=StaffOut)
+def modify_staff(staff_id: int, staff: StaffUpdate, db: Session = Depends(get_db)):
+    updated = update_staff(staff_id, staff, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    return updated
+
+
+@app.delete("/staff/{staff_id}")
+def remove_staff(staff_id: int, db: Session = Depends(get_db)):
+    ok = delete_staff(staff_id, db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    return {"detail": "Staff deleted"}
 
 # Add this to run the application directly
 if __name__ == "__main__":
