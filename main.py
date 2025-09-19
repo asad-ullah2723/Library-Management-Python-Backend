@@ -7,7 +7,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from schemas import BookCreate, BookOut
-from crud import add_book, delete_book, search_books, get_books, get_book_by_id, update_book
+from schemas import BookStatusUpdate, BulkBookStatusUpdate
+from crud import add_book, delete_book, search_books, get_books, get_book_by_id, update_book, get_books_filtered, books_stats
 from schemas import MemberCreate, MemberOut, MemberUpdate
 from crud import add_member, get_members, get_member_by_id, update_member, delete_member
 from schemas import StaffCreate, StaffOut, StaffUpdate
@@ -18,6 +19,8 @@ from crud import add_reservation, get_reservation_by_id, list_reservations, upda
 from schemas import ReservationCreate, ReservationOut
 from crud import add_fine, get_fine_by_id, list_fines, update_fine, delete_fine
 from schemas import FineCreate, FineOut
+from crud import log_auth_event, get_auth_logs, daily_issued_returned, monthly_activity, most_borrowed_books, inactive_members, fine_collection_report
+from schemas import AuthLogOut, DailyIssuedReturned, MonthlyActivity, MostBorrowedItem, InactiveMember, FineCollection
 from database import get_db, engine, Base
 import models  # ensure models are imported so tables are registered
 from auth import router as auth_router
@@ -77,14 +80,48 @@ def on_startup():
     db.close()
 
 @app.get("/books/", response_model=List[BookOut])
-def list_books(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_books(
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    new_arrivals_since: Optional[date] = None,
+    db: Session = Depends(get_db),
+):
     """
     Retrieve all books with pagination.
     - **skip**: Number of records to skip (for pagination)
     - **limit**: Maximum number of records to return (for pagination)
     """
-    books = get_books(db, skip=skip, limit=limit)
+    books = get_books_filtered(db, skip=skip, limit=limit, status=status, search=search, new_arrivals_since=new_arrivals_since)
     return books
+
+
+@app.get("/books/stats")
+def books_inventory_stats(new_arrivals_days: int = 30, db: Session = Depends(get_db)):
+    """Return inventory aggregated statistics for dashboard."""
+    try:
+        s = books_stats(db, new_arrivals_days)
+        return s
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    """Basic health check endpoint. Returns DB connectivity and basic counts."""
+    try:
+        # quick DB check
+        # using raw SQL to ensure connection is valid
+        db.execute("SELECT 1")
+        # get a few useful counts
+        total = db.query(models.Book).count()
+        members = db.query(models.Member).count()
+        return {"status": "ok", "database": "connected", "total_books": total, "total_members": members}
+    except Exception as e:
+        return {"status": "error", "database": "disconnected", "detail": str(e)}
 
 @app.post("/books/", response_model=BookOut)
 def create_book(book: BookCreate, db: Session = Depends(get_db)):
@@ -158,6 +195,20 @@ def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db)):
     if not updated:
         raise HTTPException(status_code=404, detail="Book not found")
     return updated
+
+
+@app.patch("/books/{book_id}/status", response_model=BookOut)
+def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = Depends(get_db)):
+    updated = set_book_status(book_id, payload.status, payload.note, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return updated
+
+
+@app.post("/books/status/bulk")
+def bulk_status_update(payload: BulkBookStatusUpdate, db: Session = Depends(get_db)):
+    count = bulk_update_book_status(payload.book_ids, payload.status, payload.note, db)
+    return {"updated": count}
 
 
 @app.get("/members/", response_model=List[MemberOut])
@@ -350,6 +401,38 @@ def remove_fine(fine_id: int, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=404, detail="Fine not found")
     return {"detail": "Fine deleted"}
+
+
+# Auth logs
+@app.get("/auth/logs", response_model=List[AuthLogOut])
+def list_auth_logs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return get_auth_logs(db, skip=skip, limit=limit)
+
+
+# Reports
+@app.get("/reports/daily-activity", response_model=List[DailyIssuedReturned])
+def report_daily_activity(days: int = 30, db: Session = Depends(get_db)):
+    return daily_issued_returned(db, days)
+
+
+@app.get("/reports/monthly-activity", response_model=List[MonthlyActivity])
+def report_monthly_activity(months: int = 6, db: Session = Depends(get_db)):
+    return monthly_activity(db, months)
+
+
+@app.get("/reports/most-borrowed", response_model=List[MostBorrowedItem])
+def report_most_borrowed(limit: int = 10, db: Session = Depends(get_db)):
+    return most_borrowed_books(db, limit)
+
+
+@app.get("/reports/inactive-members", response_model=List[InactiveMember])
+def report_inactive_members(months: int = 6, db: Session = Depends(get_db)):
+    return inactive_members(db, months)
+
+
+@app.get("/reports/fine-collection", response_model=List[FineCollection])
+def report_fine_collection(days: int = 30, db: Session = Depends(get_db)):
+    return fine_collection_report(db, days)
 
 # Add this to run the application directly
 if __name__ == "__main__":

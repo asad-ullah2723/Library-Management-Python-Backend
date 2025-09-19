@@ -6,6 +6,7 @@ from schemas import BookCreate
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from models import Book, Member, Staff
+import models
 from schemas import (
     BookCreate,
     MemberCreate,
@@ -13,7 +14,7 @@ from schemas import (
     StaffCreate,
     StaffUpdate,
 )
-from datetime import date
+from datetime import date, timedelta
 
 # --- Book CRUD ---
 def add_book(book_data: BookCreate, db: Session) -> Book:
@@ -68,6 +69,74 @@ def get_books(db: Session, skip: int = 0, limit: int = 100) -> List[Book]:
     return db.query(Book).offset(skip).limit(limit).all()
 
 
+def get_books_filtered(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    new_arrivals_since: Optional[date] = None,
+):
+    """
+    Return books with optional status/search filters.
+    status values (frontend-friendly): available, borrowed, reserved, damaged, lost, removed, new-arrivals
+    """
+    query = db.query(Book)
+
+    # map friendly status to current_status field
+    if status:
+        s = status.lower()
+        if s == "available":
+            query = query.filter(Book.current_status == "Available")
+        elif s == "borrowed" or s == "issued":
+            query = query.filter(Book.current_status.in_(["Issued", "Borrowed"]))
+        elif s == "reserved":
+            query = query.filter(Book.current_status == "Reserved")
+        elif s == "damaged":
+            query = query.filter(Book.current_status == "Damaged")
+        elif s == "lost":
+            query = query.filter(Book.current_status == "Lost")
+        elif s == "removed":
+            # assume removed is represented by current_status == 'Removed'
+            query = query.filter(Book.current_status == "Removed")
+        elif s == "new-arrivals":
+            # handled below via new_arrivals_since; if not provided, default to 30 days
+            pass
+
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            (Book.title.ilike(like))
+            | (Book.author.ilike(like))
+            | (Book.isbn.ilike(like))
+            | (Book.accession_number.ilike(like))
+        )
+
+    if status and status.lower() == "new-arrivals":
+        if not new_arrivals_since:
+            new_arrivals_since = date.today() - timedelta(days=30)
+        query = query.filter(Book.date_of_purchase >= new_arrivals_since)
+    elif new_arrivals_since:
+        query = query.filter(Book.date_of_purchase >= new_arrivals_since)
+
+    return query.offset(skip).limit(limit).all()
+
+
+def books_stats(db: Session, new_arrivals_days: int = 30) -> dict:
+    """Return aggregated book counts for inventory dashboard."""
+    stats = {}
+    stats['total'] = db.query(Book).count()
+    stats['available'] = db.query(Book).filter(Book.current_status == 'Available').count()
+    # treat Issued/Borrowed as borrowed
+    stats['borrowed'] = db.query(Book).filter(Book.current_status.in_(['Issued', 'Borrowed'])).count()
+    stats['damaged'] = db.query(Book).filter(Book.current_status == 'Damaged').count()
+    stats['lost'] = db.query(Book).filter(Book.current_status == 'Lost').count()
+    stats['removed'] = db.query(Book).filter(Book.current_status == 'Removed').count()
+    since = date.today() - timedelta(days=new_arrivals_days)
+    stats['new_arrivals'] = db.query(Book).filter(Book.date_of_purchase >= since).count()
+    return stats
+
+
 def get_book_by_id(book_id: int, db: Session) -> Optional[Book]:
     return db.query(Book).filter(Book.id == book_id).first()
 
@@ -100,6 +169,27 @@ def update_book(book_id: int, book_data: BookCreate, db: Session) -> Optional[Bo
         raise ValueError(msg)
     db.refresh(book)
     return book
+
+
+def set_book_status(book_id: int, status: str, note: Optional[str], db: Session) -> Optional[Book]:
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        return None
+    book.current_status = status
+    # optionally store note in shelf_number or elsewhere; here we ignore it or extend model later
+    db.add(book)
+    db.commit()
+    db.refresh(book)
+    return book
+
+
+def bulk_update_book_status(book_ids: List[int], status: str, note: Optional[str], db: Session) -> int:
+    """Update multiple books' status. Returns number of rows updated."""
+    q = db.query(Book).filter(Book.id.in_(book_ids))
+    count = q.count()
+    q.update({"current_status": status}, synchronize_session=False)
+    db.commit()
+    return count
 
 
 def search_books(
@@ -413,3 +503,83 @@ def delete_fine(fine_id: int, db: Session) -> bool:
     db.delete(f)
     db.commit()
     return True
+
+
+# --- Auth Logs & Reports ---
+from models import AuthLog
+from sqlalchemy import func
+
+def log_auth_event(user_id: Optional[int], email: Optional[str], event: str, role: Optional[str], ip_address: Optional[str], db: Session):
+    entry = AuthLog(user_id=user_id, email=email, event=event, role=role, ip_address=ip_address)
+    db.add(entry)
+    db.commit()
+
+
+def get_auth_logs(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(AuthLog).order_by(AuthLog.timestamp.desc()).offset(skip).limit(limit).all()
+
+
+def daily_issued_returned(db: Session, days: int = 30):
+    # Count transactions where issue_date / return_date fall within last `days`
+    since = date.today() - timedelta(days=days)
+    issued_q = db.query(func.date(models.Transaction.issue_date).label('d'), func.count().label('issued')).filter(models.Transaction.issue_date >= since).group_by(func.date(models.Transaction.issue_date)).subquery()
+    returned_q = db.query(func.date(models.Transaction.return_date).label('d'), func.count().label('returned')).filter(models.Transaction.return_date >= since).group_by(func.date(models.Transaction.return_date)).subquery()
+    # left join issued and returned dates
+    q = db.query(func.coalesce(issued_q.c.d, returned_q.c.d).label('date'), func.coalesce(issued_q.c.issued, 0).label('issued'), func.coalesce(returned_q.c.returned, 0).label('returned')).outerjoin(returned_q, issued_q.c.d == returned_q.c.d)
+    results = []
+    for r in q.all():
+        results.append({'date': r.date, 'issued': r.issued, 'returned': r.returned})
+    return results
+
+
+def monthly_activity(db: Session, months: int = 6):
+    # aggregate by month for last `months`
+    # Note: this is a simple aggregation and assumes PostgreSQL date functions; it should work via SQLAlchemy func
+    results = []
+    # use Transaction.issue_date / return_date
+    # For brevity, return empty list if Transaction model or table missing
+    try:
+        issued = db.query(func.to_char(models.Transaction.issue_date, 'YYYY-MM').label('month'), func.count().label('issued')).group_by(func.to_char(models.Transaction.issue_date, 'YYYY-MM')).order_by(func.to_char(models.Transaction.issue_date, 'YYYY-MM').desc()).limit(months).all()
+        returned = db.query(func.to_char(models.Transaction.return_date, 'YYYY-MM').label('month'), func.count().label('returned')).group_by(func.to_char(models.Transaction.return_date, 'YYYY-MM')).order_by(func.to_char(models.Transaction.return_date, 'YYYY-MM').desc()).limit(months).all()
+        # merge
+        issued_map = {r.month: r.issued for r in issued}
+        returned_map = {r.month: r.returned for r in returned}
+        months_keys = sorted(set(list(issued_map.keys()) + list(returned_map.keys())), reverse=True)[:months]
+        for m in months_keys:
+            results.append({'month': m, 'issued': issued_map.get(m, 0), 'returned': returned_map.get(m, 0)})
+    except Exception:
+        return []
+    return results
+
+
+def most_borrowed_books(db: Session, limit: int = 10):
+    # Count transactions by book_id
+    q = db.query(models.Transaction.book_id, func.count().label('borrow_count')).group_by(models.Transaction.book_id).order_by(func.count().desc()).limit(limit).all()
+    results = []
+    for r in q:
+        book = db.query(Book).filter(Book.id == r.book_id).first()
+        results.append({'book_id': r.book_id, 'title': getattr(book, 'title', None), 'borrow_count': r.borrow_count})
+    return results
+
+
+def inactive_members(db: Session, months: int = 6):
+    # Members with no transactions in the last `months`
+    since = date.today() - timedelta(days=30*months)
+    active_member_ids = db.query(models.Transaction.member_id).filter(models.Transaction.issue_date >= since).distinct()
+    q = db.query(Member).filter(~Member.id.in_(active_member_ids)).all()
+    results = []
+    for m in q:
+        # last_activity is out of scope; set None or last transaction date if available
+        last_txn = db.query(models.Transaction).filter(models.Transaction.member_id == m.id).order_by(models.Transaction.issue_date.desc()).first()
+        last_activity = getattr(last_txn, 'issue_date', None)
+        results.append({'member_id': m.id, 'full_name': m.full_name, 'last_activity': last_activity})
+    return results
+
+
+def fine_collection_report(db: Session, days: int = 30):
+    since = date.today() - timedelta(days=days)
+    q = db.query(func.date(Fine.payment_date).label('date'), func.sum(Fine.amount).label('collected')).filter(Fine.payment_date != None).filter(Fine.payment_date >= since).group_by(func.date(Fine.payment_date)).all()
+    results = []
+    for r in q:
+        results.append({'date': r.date, 'collected_amount': float(r.collected)})
+    return results

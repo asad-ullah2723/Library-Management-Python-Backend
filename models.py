@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Boolean
+from sqlalchemy import Column, Integer, String, Float, Date, Boolean, DateTime
 from datetime import datetime, date
 from database import Base
 
@@ -104,3 +104,15 @@ class Fine(Base):
     payment_status = Column(String, default="Unpaid")  # Paid / Unpaid
     payment_date = Column(Date, nullable=True)
     created_at = Column(Date, default=datetime.utcnow)
+
+
+class AuthLog(Base):
+    __tablename__ = "auth_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=True)
+    email = Column(String, nullable=True)
+    event = Column(String, nullable=False)  # login, logout, failed_login, etc.
+    role = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)

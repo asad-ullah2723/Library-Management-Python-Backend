@@ -1,6 +1,6 @@
 from datetime import date
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+from typing import Optional, List
 
 class BookCreate(BaseModel):
     accession_number: Optional[str] = Field(None, max_length=100)
@@ -132,3 +132,53 @@ class FineOut(FineBase):
     id: int
     created_at: Optional[date] = None
     model_config = ConfigDict(from_attributes=True)
+
+
+class BookStatusUpdate(BaseModel):
+    status: str
+    note: Optional[str] = None
+
+
+class BulkBookStatusUpdate(BaseModel):
+    book_ids: List[int]
+    status: str
+    note: Optional[str] = None
+
+
+class AuthLogOut(BaseModel):
+    id: int
+    user_id: Optional[int]
+    email: Optional[str]
+    event: str
+    role: Optional[str]
+    ip_address: Optional[str]
+    timestamp: Optional[date]
+
+
+class DailyIssuedReturned(BaseModel):
+    date: date
+    issued: int
+    returned: int
+
+
+class MonthlyActivity(BaseModel):
+    month: str
+    issued: int
+    returned: int
+
+
+class MostBorrowedItem(BaseModel):
+    book_id: int
+    title: Optional[str]
+    borrow_count: int
+
+
+class InactiveMember(BaseModel):
+    member_id: int
+    full_name: Optional[str]
+    last_activity: Optional[date]
+
+
+class FineCollection(BaseModel):
+    date: date
+    collected_amount: float
