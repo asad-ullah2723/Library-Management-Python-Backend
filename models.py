@@ -91,3 +91,16 @@ class Reservation(Base):
     reservation_date = Column(Date, nullable=False)
     status = Column(String, default="Active")  # Active, Fulfilled, Cancelled
     created_at = Column(Date, default=datetime.utcnow)
+
+
+class Fine(Base):
+    __tablename__ = "fines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fine_id = Column(String, unique=True, index=True, nullable=False)
+    member_id = Column(Integer, index=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    reason = Column(String, nullable=False)  # Overdue, Lost, Damaged
+    payment_status = Column(String, default="Unpaid")  # Paid / Unpaid
+    payment_date = Column(Date, nullable=True)
+    created_at = Column(Date, default=datetime.utcnow)

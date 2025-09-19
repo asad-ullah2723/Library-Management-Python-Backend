@@ -113,3 +113,22 @@ class ReservationOut(ReservationBase):
     id: int
     created_at: Optional[date] = None
     model_config = ConfigDict(from_attributes=True)
+
+
+class FineBase(BaseModel):
+    fine_id: str
+    member_id: int
+    amount: float
+    reason: str
+    payment_status: Optional[str] = "Unpaid"
+    payment_date: Optional[date] = None
+
+
+class FineCreate(FineBase):
+    pass
+
+
+class FineOut(FineBase):
+    id: int
+    created_at: Optional[date] = None
+    model_config = ConfigDict(from_attributes=True)

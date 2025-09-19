@@ -351,3 +351,65 @@ def delete_reservation(resv_id: int, db: Session) -> bool:
     db.delete(resv)
     db.commit()
     return True
+
+
+# --- Fine CRUD ---
+from models import Fine
+
+def add_fine(fine_data, db: Session) -> Fine:
+    exists = db.query(Fine).filter(Fine.fine_id == fine_data.fine_id).first()
+    if exists:
+        raise ValueError("Fine with this fine_id already exists.")
+    new_fine = Fine(
+        fine_id=fine_data.fine_id,
+        member_id=fine_data.member_id,
+        amount=fine_data.amount,
+        reason=fine_data.reason,
+        payment_status=fine_data.payment_status,
+        payment_date=fine_data.payment_date,
+    )
+    db.add(new_fine)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        raise ValueError(msg)
+    db.refresh(new_fine)
+    return new_fine
+
+
+def get_fine_by_id(fine_id: int, db: Session) -> Optional[Fine]:
+    return db.query(Fine).filter(Fine.id == fine_id).first()
+
+
+def list_fines(db: Session, skip: int = 0, limit: int = 100) -> List[Fine]:
+    return db.query(Fine).offset(skip).limit(limit).all()
+
+
+def update_fine(fine_id: int, fine_data, db: Session) -> Optional[Fine]:
+    f = db.query(Fine).filter(Fine.id == fine_id).first()
+    if not f:
+        return None
+    data = fine_data.__dict__
+    for key, value in data.items():
+        if value is not None:
+            setattr(f, key, value)
+    db.add(f)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        raise ValueError(msg)
+    db.refresh(f)
+    return f
+
+
+def delete_fine(fine_id: int, db: Session) -> bool:
+    f = db.query(Fine).filter(Fine.id == fine_id).first()
+    if not f:
+        return False
+    db.delete(f)
+    db.commit()
+    return True

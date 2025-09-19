@@ -16,6 +16,8 @@ from crud import add_transaction, get_transaction_by_id, list_transactions, upda
 from schemas import TransactionCreate, TransactionOut
 from crud import add_reservation, get_reservation_by_id, list_reservations, update_reservation, delete_reservation
 from schemas import ReservationCreate, ReservationOut
+from crud import add_fine, get_fine_by_id, list_fines, update_fine, delete_fine
+from schemas import FineCreate, FineOut
 from database import get_db, engine, Base
 import models  # ensure models are imported so tables are registered
 from auth import router as auth_router
@@ -307,6 +309,47 @@ def remove_resv(resv_id: int, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=404, detail="Reservation not found")
     return {"detail": "Reservation deleted"}
+
+
+# Fines endpoints
+@app.get("/fines/", response_model=List[FineOut])
+def list_fines_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return list_fines(db, skip=skip, limit=limit)
+
+
+@app.post("/fines/", response_model=FineOut)
+def create_fine(fine: FineCreate, db: Session = Depends(get_db)):
+    try:
+        return add_fine(fine, db)
+    except Exception as e:
+        import traceback
+        print("Error creating fine:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/fines/{fine_id}", response_model=FineOut)
+def retrieve_fine(fine_id: int, db: Session = Depends(get_db)):
+    f = get_fine_by_id(fine_id, db)
+    if not f:
+        raise HTTPException(status_code=404, detail="Fine not found")
+    return f
+
+
+@app.put("/fines/{fine_id}", response_model=FineOut)
+def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db)):
+    updated = update_fine(fine_id, fine, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Fine not found")
+    return updated
+
+
+@app.delete("/fines/{fine_id}")
+def remove_fine(fine_id: int, db: Session = Depends(get_db)):
+    ok = delete_fine(fine_id, db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Fine not found")
+    return {"detail": "Fine deleted"}
 
 # Add this to run the application directly
 if __name__ == "__main__":
