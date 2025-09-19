@@ -79,3 +79,15 @@ class Transaction(Base):
     fine_details = Column(String, nullable=True)  # JSON string or text describing fines
     renewal_count = Column(Integer, default=0)
     created_at = Column(Date, default=datetime.utcnow)
+
+
+class Reservation(Base):
+    __tablename__ = "reservations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reservation_id = Column(String, unique=True, index=True, nullable=False)
+    book_id = Column(Integer, index=True, nullable=False)
+    member_id = Column(Integer, index=True, nullable=False)
+    reservation_date = Column(Date, nullable=False)
+    status = Column(String, default="Active")  # Active, Fulfilled, Cancelled
+    created_at = Column(Date, default=datetime.utcnow)

@@ -95,3 +95,21 @@ class TransactionOut(TransactionBase):
     id: int
     created_at: Optional[date] = None
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReservationBase(BaseModel):
+    reservation_id: str
+    book_id: int
+    member_id: int
+    reservation_date: date
+    status: Optional[str] = "Active"
+
+
+class ReservationCreate(ReservationBase):
+    pass
+
+
+class ReservationOut(ReservationBase):
+    id: int
+    created_at: Optional[date] = None
+    model_config = ConfigDict(from_attributes=True)

@@ -289,3 +289,65 @@ def delete_transaction(txn_id: int, db: Session) -> bool:
     db.delete(txn)
     db.commit()
     return True
+
+
+# --- Reservation CRUD ---
+from models import Reservation as Resv
+
+def add_reservation(resv_data, db: Session) -> Resv:
+    # ensure uniqueness of reservation_id
+    exists = db.query(Resv).filter(Resv.reservation_id == resv_data.reservation_id).first()
+    if exists:
+        raise ValueError("Reservation with this reservation_id already exists.")
+    new_resv = Resv(
+        reservation_id=resv_data.reservation_id,
+        book_id=resv_data.book_id,
+        member_id=resv_data.member_id,
+        reservation_date=resv_data.reservation_date,
+        status=resv_data.status,
+    )
+    db.add(new_resv)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        raise ValueError(msg)
+    db.refresh(new_resv)
+    return new_resv
+
+
+def get_reservation_by_id(resv_id: int, db: Session) -> Optional[Resv]:
+    return db.query(Resv).filter(Resv.id == resv_id).first()
+
+
+def list_reservations(db: Session, skip: int = 0, limit: int = 100) -> List[Resv]:
+    return db.query(Resv).offset(skip).limit(limit).all()
+
+
+def update_reservation(resv_id: int, resv_data, db: Session) -> Optional[Resv]:
+    resv = db.query(Resv).filter(Resv.id == resv_id).first()
+    if not resv:
+        return None
+    data = resv_data.__dict__
+    for key, value in data.items():
+        if value is not None:
+            setattr(resv, key, value)
+    db.add(resv)
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        raise ValueError(msg)
+    db.refresh(resv)
+    return resv
+
+
+def delete_reservation(resv_id: int, db: Session) -> bool:
+    resv = db.query(Resv).filter(Resv.id == resv_id).first()
+    if not resv:
+        return False
+    db.delete(resv)
+    db.commit()
+    return True

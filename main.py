@@ -14,6 +14,8 @@ from schemas import StaffCreate, StaffOut, StaffUpdate
 from crud import add_staff, get_staff, get_staff_by_id, update_staff, delete_staff
 from crud import add_transaction, get_transaction_by_id, list_transactions, update_transaction, delete_transaction
 from schemas import TransactionCreate, TransactionOut
+from crud import add_reservation, get_reservation_by_id, list_reservations, update_reservation, delete_reservation
+from schemas import ReservationCreate, ReservationOut
 from database import get_db, engine, Base
 import models  # ensure models are imported so tables are registered
 from auth import router as auth_router
@@ -264,6 +266,47 @@ def remove_txn(txn_id: int, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {"detail": "Transaction deleted"}
+
+
+# Reservations endpoints
+@app.get("/reservations/", response_model=List[ReservationOut])
+def list_resv(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return list_reservations(db, skip=skip, limit=limit)
+
+
+@app.post("/reservations/", response_model=ReservationOut)
+def create_resv(resv: ReservationCreate, db: Session = Depends(get_db)):
+    try:
+        return add_reservation(resv, db)
+    except Exception as e:
+        import traceback
+        print("Error creating reservation:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/reservations/{resv_id}", response_model=ReservationOut)
+def retrieve_resv(resv_id: int, db: Session = Depends(get_db)):
+    r = get_reservation_by_id(resv_id, db)
+    if not r:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    return r
+
+
+@app.put("/reservations/{resv_id}", response_model=ReservationOut)
+def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get_db)):
+    updated = update_reservation(resv_id, resv, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    return updated
+
+
+@app.delete("/reservations/{resv_id}")
+def remove_resv(resv_id: int, db: Session = Depends(get_db)):
+    ok = delete_reservation(resv_id, db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    return {"detail": "Reservation deleted"}
 
 # Add this to run the application directly
 if __name__ == "__main__":
