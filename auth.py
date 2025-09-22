@@ -8,6 +8,28 @@ from database import get_db
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+
+@router.get('/public-key')
+def public_key():
+    """Return public PEM key when RS256 is enabled. Returns 404 when asymmetric signing is not enabled."""
+    pk = auth_utils.get_public_key()
+    if not pk:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Public key not available")
+    return {"public_key": pk}
+
+
+@router.get('/debug')
+def debug_token(current_user: models.User = Depends(auth_utils.get_admin_user), token: str = Depends(auth_utils.oauth2_scheme)):
+    """Admin-only: return decoded token payload and current_user info for debugging."""
+    from jose import JWTError, jwt
+    try:
+        verify_key = auth_utils.get_public_key() if auth_utils.is_rs256_enabled() else auth_utils.SECRET_KEY
+        payload = jwt.decode(token, verify_key, algorithms=[auth_utils.ALGORITHM])
+    except JWTError as e:
+        return {"error": str(e)}
+    return {"payload": payload, "current_user": {"id": getattr(current_user, 'id', None), "email": getattr(current_user, 'email', None), "is_superuser": getattr(current_user, 'is_superuser', False)}}
+
 @router.post("/register", response_model=auth_schemas.UserInDB)
 def register(user: auth_schemas.UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists

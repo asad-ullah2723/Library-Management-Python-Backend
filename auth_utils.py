@@ -80,6 +80,16 @@ oauth2_scheme = OAuth2PasswordBearer(
     }
 )
 
+
+def is_rs256_enabled() -> bool:
+    """Return True if RS256/JWS signing is enabled and keys loaded."""
+    return bool(_USE_RS256 and _PUBLIC_KEY and _PRIVATE_KEY)
+
+
+def get_public_key() -> Optional[str]:
+    """Return the public PEM if available, else None."""
+    return _PUBLIC_KEY
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
     return pwd_context.verify(plain_password, hashed_password)
