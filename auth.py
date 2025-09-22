@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-import models, schemas, auth_schemas, auth_utils
+import models, schemas, auth_schemas, auth_utils, crud
 from database import get_db
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -32,21 +32,38 @@ class LoginRequest(auth_schemas.UserLogin):
     pass
 
 @router.post("/login", response_model=auth_schemas.Token)
-async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+async def login(request: Request, login_data: LoginRequest, db: Session = Depends(get_db)):
+    # capture remote IP (best-effort)
+    client_ip = None
+    try:
+        client_ip = request.client.host
+    except Exception:
+        client_ip = request.headers.get("x-forwarded-for") or request.client
+
     print(f"Login attempt for email: {login_data.email}")
-    
+
     # Authenticate user
     user = db.query(models.User).filter(models.User.email == login_data.email).first()
     if not user:
         print("User not found")
+        # log failed login
+        try:
+            crud.log_auth_event(user_id=None, email=login_data.email, event="login_failed", role=None, ip_address=client_ip, db=db)
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not auth_utils.verify_password(login_data.password, user.hashed_password):
         print("Invalid password")
+        # log failed login with known user id
+        try:
+            crud.log_auth_event(user_id=user.id, email=user.email, event="login_failed", role=None, ip_address=client_ip, db=db)
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -78,6 +95,12 @@ async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         expires_delta=access_token_expires
     )
 
+    # log successful login
+    try:
+        crud.log_auth_event(user_id=user.id, email=user.email, event="login_success", role=role_str, ip_address=client_ip, db=db)
+    except Exception:
+        pass
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -85,8 +108,6 @@ async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         "email": user.email,
         "role": role_str
     }
-    
-    return response_data
 
 @router.post("/forgot-password")
 async def forgot_password(email: str, db: Session = Depends(get_db)):

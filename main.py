@@ -87,6 +87,7 @@ def list_books(
     search: Optional[str] = None,
     new_arrivals_since: Optional[date] = None,
     db: Session = Depends(get_db),
+    _admin: models.User = Depends(auth_utils.get_admin_user),
 ):
     """
     Retrieve all books with pagination.
@@ -98,7 +99,7 @@ def list_books(
 
 
 @app.get("/books/stats")
-def books_inventory_stats(new_arrivals_days: int = 30, db: Session = Depends(get_db)):
+def books_inventory_stats(new_arrivals_days: int = 30, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     """Return inventory aggregated statistics for dashboard."""
     try:
         s = books_stats(db, new_arrivals_days)
@@ -124,7 +125,7 @@ def health(db: Session = Depends(get_db)):
         return {"status": "error", "database": "disconnected", "detail": str(e)}
 
 @app.post("/books/", response_model=BookOut)
-def create_book(book: BookCreate, db: Session = Depends(get_db)):
+def create_book(book: BookCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     try:
         return add_book(book, db)
     except Exception as e:
@@ -135,7 +136,7 @@ def create_book(book: BookCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/books/{book_id}")
-def remove_book(book_id: int, db: Session = Depends(get_db)):
+def remove_book(book_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     ok = delete_book(book_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -150,7 +151,8 @@ def search(
     max_price: Optional[float] = None,
     published_after: Optional[date] = None,
     published_before: Optional[date] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(auth_utils.get_admin_user),
 ):
     try:
         print("Searching books with params:", {
@@ -182,7 +184,7 @@ def search(
 
 
 @app.get("/books/{book_id}", response_model=BookOut)
-def retrieve_book(book_id: int, db: Session = Depends(get_db)):
+def retrieve_book(book_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     b = get_book_by_id(book_id, db)
     if not b:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -190,7 +192,7 @@ def retrieve_book(book_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/books/{book_id}", response_model=BookOut)
-def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db)):
+def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = update_book(book_id, book, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -198,7 +200,7 @@ def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db)):
 
 
 @app.patch("/books/{book_id}/status", response_model=BookOut)
-def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = Depends(get_db)):
+def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = set_book_status(book_id, payload.status, payload.note, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -206,24 +208,24 @@ def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = De
 
 
 @app.post("/books/status/bulk")
-def bulk_status_update(payload: BulkBookStatusUpdate, db: Session = Depends(get_db)):
+def bulk_status_update(payload: BulkBookStatusUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     count = bulk_update_book_status(payload.book_ids, payload.status, payload.note, db)
     return {"updated": count}
 
 
 @app.get("/members/", response_model=List[MemberOut])
-def list_members(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_members(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     """List members with pagination"""
     return get_members(db, skip=skip, limit=limit)
 
 
 @app.post("/members/", response_model=MemberOut)
-def create_member(member: MemberCreate, db: Session = Depends(get_db)):
+def create_member(member: MemberCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return add_member(member, db)
 
 
 @app.get("/members/{member_id}", response_model=MemberOut)
-def retrieve_member(member_id: int, db: Session = Depends(get_db)):
+def retrieve_member(member_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     m = get_member_by_id(member_id, db)
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -231,7 +233,7 @@ def retrieve_member(member_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/members/{member_id}", response_model=MemberOut)
-def modify_member(member_id: int, member: MemberUpdate, db: Session = Depends(get_db)):
+def modify_member(member_id: int, member: MemberUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = update_member(member_id, member, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -239,7 +241,7 @@ def modify_member(member_id: int, member: MemberUpdate, db: Session = Depends(ge
 
 
 @app.delete("/members/{member_id}")
-def remove_member(member_id: int, db: Session = Depends(get_db)):
+def remove_member(member_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     ok = delete_member(member_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -247,17 +249,17 @@ def remove_member(member_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/staff/", response_model=List[StaffOut])
-def list_staff(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_staff(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return get_staff(db, skip=skip, limit=limit)
 
 
 @app.post("/staff/", response_model=StaffOut)
-def create_staff(staff: StaffCreate, db: Session = Depends(get_db)):
+def create_staff(staff: StaffCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return add_staff(staff, db)
 
 
 @app.get("/staff/{staff_id}", response_model=StaffOut)
-def retrieve_staff(staff_id: int, db: Session = Depends(get_db)):
+def retrieve_staff(staff_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     s = get_staff_by_id(staff_id, db)
     if not s:
         raise HTTPException(status_code=404, detail="Staff not found")
@@ -265,7 +267,7 @@ def retrieve_staff(staff_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/staff/{staff_id}", response_model=StaffOut)
-def modify_staff(staff_id: int, staff: StaffUpdate, db: Session = Depends(get_db)):
+def modify_staff(staff_id: int, staff: StaffUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = update_staff(staff_id, staff, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Staff not found")
@@ -273,7 +275,7 @@ def modify_staff(staff_id: int, staff: StaffUpdate, db: Session = Depends(get_db
 
 
 @app.delete("/staff/{staff_id}")
-def remove_staff(staff_id: int, db: Session = Depends(get_db)):
+def remove_staff(staff_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     ok = delete_staff(staff_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Staff not found")
@@ -282,12 +284,12 @@ def remove_staff(staff_id: int, db: Session = Depends(get_db)):
 
 # Transactions endpoints
 @app.get("/transactions/", response_model=List[TransactionOut])
-def list_txns(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_txns(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return list_transactions(db, skip=skip, limit=limit)
 
 
 @app.post("/transactions/", response_model=TransactionOut)
-def create_txn(txn: TransactionCreate, db: Session = Depends(get_db)):
+def create_txn(txn: TransactionCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     try:
         return add_transaction(txn, db)
     except Exception as e:
@@ -298,7 +300,7 @@ def create_txn(txn: TransactionCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/transactions/{txn_id}", response_model=TransactionOut)
-def retrieve_txn(txn_id: int, db: Session = Depends(get_db)):
+def retrieve_txn(txn_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     t = get_transaction_by_id(txn_id, db)
     if not t:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -306,7 +308,7 @@ def retrieve_txn(txn_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/transactions/{txn_id}", response_model=TransactionOut)
-def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db)):
+def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = update_transaction(txn_id, txn, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -314,7 +316,7 @@ def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db
 
 
 @app.delete("/transactions/{txn_id}")
-def remove_txn(txn_id: int, db: Session = Depends(get_db)):
+def remove_txn(txn_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     ok = delete_transaction(txn_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -323,12 +325,12 @@ def remove_txn(txn_id: int, db: Session = Depends(get_db)):
 
 # Reservations endpoints
 @app.get("/reservations/", response_model=List[ReservationOut])
-def list_resv(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_resv(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return list_reservations(db, skip=skip, limit=limit)
 
 
 @app.post("/reservations/", response_model=ReservationOut)
-def create_resv(resv: ReservationCreate, db: Session = Depends(get_db)):
+def create_resv(resv: ReservationCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     try:
         return add_reservation(resv, db)
     except Exception as e:
@@ -339,7 +341,7 @@ def create_resv(resv: ReservationCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/reservations/{resv_id}", response_model=ReservationOut)
-def retrieve_resv(resv_id: int, db: Session = Depends(get_db)):
+def retrieve_resv(resv_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     r = get_reservation_by_id(resv_id, db)
     if not r:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -347,7 +349,7 @@ def retrieve_resv(resv_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/reservations/{resv_id}", response_model=ReservationOut)
-def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get_db)):
+def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = update_reservation(resv_id, resv, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -355,7 +357,7 @@ def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get
 
 
 @app.delete("/reservations/{resv_id}")
-def remove_resv(resv_id: int, db: Session = Depends(get_db)):
+def remove_resv(resv_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     ok = delete_reservation(resv_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -364,12 +366,12 @@ def remove_resv(resv_id: int, db: Session = Depends(get_db)):
 
 # Fines endpoints
 @app.get("/fines/", response_model=List[FineOut])
-def list_fines_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_fines_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return list_fines(db, skip=skip, limit=limit)
 
 
 @app.post("/fines/", response_model=FineOut)
-def create_fine(fine: FineCreate, db: Session = Depends(get_db)):
+def create_fine(fine: FineCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     try:
         return add_fine(fine, db)
     except Exception as e:
@@ -380,7 +382,7 @@ def create_fine(fine: FineCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/fines/{fine_id}", response_model=FineOut)
-def retrieve_fine(fine_id: int, db: Session = Depends(get_db)):
+def retrieve_fine(fine_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     f = get_fine_by_id(fine_id, db)
     if not f:
         raise HTTPException(status_code=404, detail="Fine not found")
@@ -388,7 +390,7 @@ def retrieve_fine(fine_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/fines/{fine_id}", response_model=FineOut)
-def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db)):
+def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     updated = update_fine(fine_id, fine, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Fine not found")
@@ -396,7 +398,7 @@ def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db)):
 
 
 @app.delete("/fines/{fine_id}")
-def remove_fine(fine_id: int, db: Session = Depends(get_db)):
+def remove_fine(fine_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     ok = delete_fine(fine_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Fine not found")
@@ -405,33 +407,33 @@ def remove_fine(fine_id: int, db: Session = Depends(get_db)):
 
 # Auth logs
 @app.get("/auth/logs", response_model=List[AuthLogOut])
-def list_auth_logs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_auth_logs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return get_auth_logs(db, skip=skip, limit=limit)
 
 
 # Reports
 @app.get("/reports/daily-activity", response_model=List[DailyIssuedReturned])
-def report_daily_activity(days: int = 30, db: Session = Depends(get_db)):
+def report_daily_activity(days: int = 30, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return daily_issued_returned(db, days)
 
 
 @app.get("/reports/monthly-activity", response_model=List[MonthlyActivity])
-def report_monthly_activity(months: int = 6, db: Session = Depends(get_db)):
+def report_monthly_activity(months: int = 6, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return monthly_activity(db, months)
 
 
 @app.get("/reports/most-borrowed", response_model=List[MostBorrowedItem])
-def report_most_borrowed(limit: int = 10, db: Session = Depends(get_db)):
+def report_most_borrowed(limit: int = 10, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return most_borrowed_books(db, limit)
 
 
 @app.get("/reports/inactive-members", response_model=List[InactiveMember])
-def report_inactive_members(months: int = 6, db: Session = Depends(get_db)):
+def report_inactive_members(months: int = 6, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return inactive_members(db, months)
 
 
 @app.get("/reports/fine-collection", response_model=List[FineCollection])
-def report_fine_collection(days: int = 30, db: Session = Depends(get_db)):
+def report_fine_collection(days: int = 30, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return fine_collection_report(db, days)
 
 # Add this to run the application directly
