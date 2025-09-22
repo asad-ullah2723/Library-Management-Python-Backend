@@ -56,6 +56,12 @@ async def log_requests(request, call_next):
     return response
 # Include auth router
 app.include_router(auth_router)
+# Include admin router (user & book management)
+try:
+    from admin import router as admin_router
+    app.include_router(admin_router)
+except Exception as e:
+    print("Warning: failed to include admin router:", e)
 
 @app.on_event("startup")
 def on_startup():
@@ -87,7 +93,7 @@ def list_books(
     search: Optional[str] = None,
     new_arrivals_since: Optional[date] = None,
     db: Session = Depends(get_db),
-    _admin: models.User = Depends(auth_utils.get_admin_user),
+    current_user: models.User = Depends(auth_utils.get_current_active_user),
 ):
     """
     Retrieve all books with pagination.
@@ -99,7 +105,7 @@ def list_books(
 
 
 @app.get("/books/stats")
-def books_inventory_stats(new_arrivals_days: int = 30, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def books_inventory_stats(new_arrivals_days: int = 30, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     """Return inventory aggregated statistics for dashboard."""
     try:
         s = books_stats(db, new_arrivals_days)
@@ -125,7 +131,7 @@ def health(db: Session = Depends(get_db)):
         return {"status": "error", "database": "disconnected", "detail": str(e)}
 
 @app.post("/books/", response_model=BookOut)
-def create_book(book: BookCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def create_book(book: BookCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     try:
         return add_book(book, db)
     except Exception as e:
@@ -136,7 +142,7 @@ def create_book(book: BookCreate, db: Session = Depends(get_db), _admin: models.
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/books/{book_id}")
-def remove_book(book_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def remove_book(book_id: int, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     ok = delete_book(book_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -152,7 +158,7 @@ def search(
     published_after: Optional[date] = None,
     published_before: Optional[date] = None,
     db: Session = Depends(get_db),
-    _admin: models.User = Depends(auth_utils.get_admin_user),
+    current_user: models.User = Depends(auth_utils.get_current_active_user),
 ):
     try:
         print("Searching books with params:", {
@@ -184,7 +190,7 @@ def search(
 
 
 @app.get("/books/{book_id}", response_model=BookOut)
-def retrieve_book(book_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def retrieve_book(book_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
     b = get_book_by_id(book_id, db)
     if not b:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -192,7 +198,7 @@ def retrieve_book(book_id: int, db: Session = Depends(get_db), _admin: models.Us
 
 
 @app.put("/books/{book_id}", response_model=BookOut)
-def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     updated = update_book(book_id, book, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -200,7 +206,7 @@ def modify_book(book_id: int, book: BookCreate, db: Session = Depends(get_db), _
 
 
 @app.patch("/books/{book_id}/status", response_model=BookOut)
-def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     updated = set_book_status(book_id, payload.status, payload.note, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -208,13 +214,13 @@ def update_book_status(book_id: int, payload: BookStatusUpdate, db: Session = De
 
 
 @app.post("/books/status/bulk")
-def bulk_status_update(payload: BulkBookStatusUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def bulk_status_update(payload: BulkBookStatusUpdate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     count = bulk_update_book_status(payload.book_ids, payload.status, payload.note, db)
     return {"updated": count}
 
 
 @app.get("/members/", response_model=List[MemberOut])
-def list_members(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def list_members(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     """List members with pagination"""
     return get_members(db, skip=skip, limit=limit)
 
@@ -225,7 +231,7 @@ def create_member(member: MemberCreate, db: Session = Depends(get_db), _admin: m
 
 
 @app.get("/members/{member_id}", response_model=MemberOut)
-def retrieve_member(member_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def retrieve_member(member_id: int, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     m = get_member_by_id(member_id, db)
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -233,7 +239,7 @@ def retrieve_member(member_id: int, db: Session = Depends(get_db), _admin: model
 
 
 @app.put("/members/{member_id}", response_model=MemberOut)
-def modify_member(member_id: int, member: MemberUpdate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def modify_member(member_id: int, member: MemberUpdate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     updated = update_member(member_id, member, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -284,12 +290,12 @@ def remove_staff(staff_id: int, db: Session = Depends(get_db), _admin: models.Us
 
 # Transactions endpoints
 @app.get("/transactions/", response_model=List[TransactionOut])
-def list_txns(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def list_txns(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     return list_transactions(db, skip=skip, limit=limit)
 
 
 @app.post("/transactions/", response_model=TransactionOut)
-def create_txn(txn: TransactionCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def create_txn(txn: TransactionCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     try:
         return add_transaction(txn, db)
     except Exception as e:
@@ -300,15 +306,25 @@ def create_txn(txn: TransactionCreate, db: Session = Depends(get_db), _admin: mo
 
 
 @app.get("/transactions/{txn_id}", response_model=TransactionOut)
-def retrieve_txn(txn_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def retrieve_txn(txn_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
     t = get_transaction_by_id(txn_id, db)
     if not t:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    # member can view only their own transactions
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+    except Exception:
+        role_val = None
+    is_admin = getattr(current_user, 'is_superuser', False)
+    if not is_admin and (not role_val or role_val.lower() == 'member'):
+        if t.member_id != getattr(current_user, 'id', None):
+            raise HTTPException(status_code=403, detail="Not authorized to view this transaction")
     return t
 
 
 @app.put("/transactions/{txn_id}", response_model=TransactionOut)
-def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     updated = update_transaction(txn_id, txn, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -316,7 +332,7 @@ def modify_txn(txn_id: int, txn: TransactionCreate, db: Session = Depends(get_db
 
 
 @app.delete("/transactions/{txn_id}")
-def remove_txn(txn_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def remove_txn(txn_id: int, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     ok = delete_transaction(txn_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Transaction not found")
@@ -325,13 +341,33 @@ def remove_txn(txn_id: int, db: Session = Depends(get_db), _admin: models.User =
 
 # Reservations endpoints
 @app.get("/reservations/", response_model=List[ReservationOut])
-def list_resv(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
-    return list_reservations(db, skip=skip, limit=limit)
+def list_resv(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    # librarians/admin can list all; members only see their own
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+    except Exception:
+        role_val = None
+    is_admin = getattr(current_user, 'is_superuser', False)
+    if is_admin or (role_val and role_val.lower() in ['librarian', 'admin']):
+        return list_reservations(db, skip=skip, limit=limit)
+    # member
+    return list_reservations_for_member(getattr(current_user, 'id', None), db, skip=skip, limit=limit)
 
 
 @app.post("/reservations/", response_model=ReservationOut)
-def create_resv(resv: ReservationCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def create_resv(resv: ReservationCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
     try:
+        # ensure members can only create reservations for themselves
+        member_id = getattr(current_user, 'id', None)
+        try:
+            role_attr = getattr(current_user, 'role', None)
+            role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+        except Exception:
+            role_val = None
+        if not (getattr(current_user, 'is_superuser', False) or (role_val and role_val.lower() in ['librarian', 'admin'])):
+            # force reservation to be for the current member
+            resv.member_id = member_id
         return add_reservation(resv, db)
     except Exception as e:
         import traceback
@@ -341,15 +377,25 @@ def create_resv(resv: ReservationCreate, db: Session = Depends(get_db), _admin: 
 
 
 @app.get("/reservations/{resv_id}", response_model=ReservationOut)
-def retrieve_resv(resv_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def retrieve_resv(resv_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
     r = get_reservation_by_id(resv_id, db)
     if not r:
         raise HTTPException(status_code=404, detail="Reservation not found")
+    # members can only view their own
+    is_admin = getattr(current_user, 'is_superuser', False)
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+    except Exception:
+        role_val = None
+    if not is_admin and (not role_val or role_val.lower() == 'member'):
+        if r.member_id != getattr(current_user, 'id', None):
+            raise HTTPException(status_code=403, detail="Not authorized to view this reservation")
     return r
 
 
 @app.put("/reservations/{resv_id}", response_model=ReservationOut)
-def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     updated = update_reservation(resv_id, resv, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -357,7 +403,21 @@ def modify_resv(resv_id: int, resv: ReservationCreate, db: Session = Depends(get
 
 
 @app.delete("/reservations/{resv_id}")
-def remove_resv(resv_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def remove_resv(resv_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    # allow members to cancel their own reservations
+    r = get_reservation_by_id(resv_id, db)
+    if not r:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    is_admin = getattr(current_user, 'is_superuser', False)
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+    except Exception:
+        role_val = None
+    if not (is_admin or (role_val and role_val.lower() in ['librarian', 'admin'])):
+        # member - can only delete their own reservation
+        if r.member_id != getattr(current_user, 'id', None):
+            raise HTTPException(status_code=403, detail="Not authorized to cancel this reservation")
     ok = delete_reservation(resv_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Reservation not found")
@@ -366,12 +426,21 @@ def remove_resv(resv_id: int, db: Session = Depends(get_db), _admin: models.User
 
 # Fines endpoints
 @app.get("/fines/", response_model=List[FineOut])
-def list_fines_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
-    return list_fines(db, skip=skip, limit=limit)
+def list_fines_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    # librarians/admin see all, members see only their fines
+    is_admin = getattr(current_user, 'is_superuser', False)
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+    except Exception:
+        role_val = None
+    if is_admin or (role_val and role_val.lower() in ['librarian', 'admin']):
+        return list_fines(db, skip=skip, limit=limit)
+    return list_fines_for_member(getattr(current_user, 'id', None), db, skip=skip, limit=limit)
 
 
 @app.post("/fines/", response_model=FineOut)
-def create_fine(fine: FineCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def create_fine(fine: FineCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     try:
         return add_fine(fine, db)
     except Exception as e:
@@ -382,15 +451,25 @@ def create_fine(fine: FineCreate, db: Session = Depends(get_db), _admin: models.
 
 
 @app.get("/fines/{fine_id}", response_model=FineOut)
-def retrieve_fine(fine_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def retrieve_fine(fine_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
     f = get_fine_by_id(fine_id, db)
     if not f:
         raise HTTPException(status_code=404, detail="Fine not found")
+    # member can view/pay only their own fines
+    is_admin = getattr(current_user, 'is_superuser', False)
+    try:
+        role_attr = getattr(current_user, 'role', None)
+        role_val = getattr(role_attr, 'value', None) or str(role_attr) if role_attr is not None else None
+    except Exception:
+        role_val = None
+    if not is_admin and (not role_val or role_val.lower() == 'member'):
+        if f.member_id != getattr(current_user, 'id', None):
+            raise HTTPException(status_code=403, detail="Not authorized to view this fine")
     return f
 
 
 @app.put("/fines/{fine_id}", response_model=FineOut)
-def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     updated = update_fine(fine_id, fine, db)
     if not updated:
         raise HTTPException(status_code=404, detail="Fine not found")
@@ -398,7 +477,7 @@ def modify_fine(fine_id: int, fine: FineCreate, db: Session = Depends(get_db), _
 
 
 @app.delete("/fines/{fine_id}")
-def remove_fine(fine_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
+def remove_fine(fine_id: int, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
     ok = delete_fine(fine_id, db)
     if not ok:
         raise HTTPException(status_code=404, detail="Fine not found")
@@ -435,6 +514,36 @@ def report_inactive_members(months: int = 6, db: Session = Depends(get_db), _adm
 @app.get("/reports/fine-collection", response_model=List[FineCollection])
 def report_fine_collection(days: int = 30, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return fine_collection_report(db, days)
+
+
+# --- Member personal endpoints ---
+@app.get("/transactions/me", response_model=List[TransactionOut])
+def my_transactions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    return list_transactions_for_member(getattr(current_user, 'id', None), db, skip=skip, limit=limit)
+
+
+@app.get("/reservations/me", response_model=List[ReservationOut])
+def my_reservations(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    return list_reservations_for_member(getattr(current_user, 'id', None), db, skip=skip, limit=limit)
+
+
+@app.get("/fines/me", response_model=List[FineOut])
+def my_fines(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    return list_fines_for_member(getattr(current_user, 'id', None), db, skip=skip, limit=limit)
+
+
+@app.get("/reports/me")
+def my_reports(db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+    # Personal borrowing history and fines
+    txns = list_transactions_for_member(getattr(current_user, 'id', None), db)
+    fines = list_fines_for_member(getattr(current_user, 'id', None), db)
+    # basic personal report
+    return {
+        "user_id": getattr(current_user, 'id', None),
+        "email": getattr(current_user, 'email', None),
+        "transactions": txns,
+        "fines": fines,
+    }
 
 # Add this to run the application directly
 if __name__ == "__main__":

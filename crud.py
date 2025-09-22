@@ -353,6 +353,11 @@ def list_transactions(db: Session, skip: int = 0, limit: int = 100) -> List[Txn]
     return db.query(Txn).offset(skip).limit(limit).all()
 
 
+def list_transactions_for_member(member_id: int, db: Session, skip: int = 0, limit: int = 100) -> List[Txn]:
+    """Return transactions belonging to a specific member."""
+    return db.query(Txn).filter(Txn.member_id == member_id).offset(skip).limit(limit).all()
+
+
 def update_transaction(txn_id: int, txn_data, db: Session) -> Optional[Txn]:
     txn = db.query(Txn).filter(Txn.id == txn_id).first()
     if not txn:
@@ -415,6 +420,11 @@ def list_reservations(db: Session, skip: int = 0, limit: int = 100) -> List[Resv
     return db.query(Resv).offset(skip).limit(limit).all()
 
 
+def list_reservations_for_member(member_id: int, db: Session, skip: int = 0, limit: int = 100) -> List[Resv]:
+    """Return reservations belonging to a specific member."""
+    return db.query(Resv).filter(Resv.member_id == member_id).offset(skip).limit(limit).all()
+
+
 def update_reservation(resv_id: int, resv_data, db: Session) -> Optional[Resv]:
     resv = db.query(Resv).filter(Resv.id == resv_id).first()
     if not resv:
@@ -475,6 +485,11 @@ def get_fine_by_id(fine_id: int, db: Session) -> Optional[Fine]:
 
 def list_fines(db: Session, skip: int = 0, limit: int = 100) -> List[Fine]:
     return db.query(Fine).offset(skip).limit(limit).all()
+
+
+def list_fines_for_member(member_id: int, db: Session, skip: int = 0, limit: int = 100) -> List[Fine]:
+    """Return fines belonging to a specific member."""
+    return db.query(Fine).filter(Fine.member_id == member_id).offset(skip).limit(limit).all()
 
 
 def update_fine(fine_id: int, fine_data, db: Session) -> Optional[Fine]:
