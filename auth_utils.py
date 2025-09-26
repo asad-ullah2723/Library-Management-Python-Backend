@@ -77,7 +77,10 @@ oauth2_scheme = OAuth2PasswordBearer(
         "admin": "Admin operations",
         "librarian": "Librarian operations",
         "member": "Member operations"
-    }
+    },
+    # Do not automatically return a 401 when no token is provided.
+    # This allows creating optional authentication dependencies for public endpoints.
+    auto_error=False,
 )
 
 
@@ -113,7 +116,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 async def get_current_user(
     security_scopes: SecurityScopes,
-    token: str = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> models.User:
     """Get the current user from the JWT token and validate scopes."""
@@ -129,6 +132,9 @@ async def get_current_user(
     )
     
     try:
+        # If no token was provided, oauth2_scheme returns None when auto_error=False
+        if not token:
+            raise credentials_exception
         # For RS256 we must verify with the public key
         verify_key = _PUBLIC_KEY if _USE_RS256 else SECRET_KEY
         payload = jwt.decode(token, verify_key, algorithms=[ALGORITHM])
@@ -157,6 +163,37 @@ async def get_current_user(
                     headers={"WWW-Authenticate": authenticate_value},
                 )
     
+    return user
+
+
+async def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[models.User]:
+    """Attempt to get current user from token. Return None if no token provided.
+
+    Raises 401/403 if a token is provided but invalid or user not found.
+    """
+    if not token:
+        return None
+    # Reuse existing logic from get_current_user but without SecurityScopes handling
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        verify_key = _PUBLIC_KEY if _USE_RS256 else SECRET_KEY
+        payload = jwt.decode(token, verify_key, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except (JWTError, ValidationError):
+        raise credentials_exception
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user is None:
+        raise credentials_exception
     return user
 
 async def get_current_active_user(
@@ -192,21 +229,41 @@ def get_admin_user(
     )
 
 def get_librarian_user(
-    current_user: models.User = Security(get_current_user, scopes=["librarian", "admin"])
+    current_user: models.User = Security(get_current_user, scopes=[]),
+    token: Optional[str] = Security(oauth2_scheme, scopes=[]),
 ) -> models.User:
-    """Get the current user if they are a librarian or admin."""
+    """Get the current user if they are a librarian or admin.
+
+    This accepts tokens that include either the 'librarian' or 'admin' scope (logical OR).
+    We don't ask Security to enforce scopes because Security with multiple scopes requires
+    all scopes to be present. Instead we decode the token ourselves here (if present)
+    and accept the user if either scope is present, or if the DB user has role/is_superuser.
+    """
+    # Try to accept based on token scopes first (if token provided)
+    try:
+        if token:
+            verify_key = _PUBLIC_KEY if _USE_RS256 else SECRET_KEY
+            payload = jwt.decode(token, verify_key, algorithms=[ALGORITHM])
+            token_scopes = payload.get("scopes", [])
+            if isinstance(token_scopes, str):
+                token_scopes = [token_scopes]
+            for s in token_scopes:
+                if s and s.lower() in ["librarian", "admin"]:
+                    return current_user
+    except Exception:
+        # ignore token decode errors here; we'll validate via DB attributes below
+        pass
+
+    # Fallback: check stored user attributes
     try:
         role_attr = getattr(current_user, 'role', None)
         if role_attr is not None:
             role_val = getattr(role_attr, 'value', None) or str(role_attr)
             if role_val and role_val.lower() in ['librarian', 'admin']:
                 return current_user
-        # fallback to is_superuser boolean
         if getattr(current_user, 'is_superuser', False):
             return current_user
     except Exception:
         pass
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Not enough permissions"
-    )
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")

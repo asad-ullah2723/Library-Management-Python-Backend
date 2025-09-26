@@ -17,6 +17,7 @@ class BookCreate(BaseModel):
     published_date: Optional[date] = None
     current_status: Optional[str] = Field(None, max_length=50)
     shelf_number: Optional[str] = Field(None, max_length=100)
+    image_url: Optional[str] = None
 
 class BookOut(BookCreate):
     id: int

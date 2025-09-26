@@ -1,0 +1,112 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
+    "name": "Library-Books-API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"admin@example.com\",\n  \"password\": \"admin123\"\n}"
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Books - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/books/?skip=0&limit=50"
+      },
+      "response": []
+    },
+    {
+      "name": "Books - Search",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/books/search?title=python"
+      },
+      "response": []
+    },
+    {
+      "name": "Books - Get By ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/books/1"
+      },
+      "response": []
+    },
+    {
+      "name": "Books - Create (multipart + file)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "book",
+              "value": "{\n  \"accession_number\": \"ACC-12345\",\n  \"title\": \"My Book Title\",\n  \"author\": \"Author Name\",\n  \"publisher\": \"Pub Co\",\n  \"isbn\": \"978-3-16-148410-0\",\n  \"price\": 9.99\n}",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "<path-to-local-image>"
+            }
+          ]
+        },
+        "url": "{{base_url}}/books/"
+      },
+      "response": []
+    },
+    {
+      "name": "Books - Delete",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base_url}}/books/1"
+      },
+      "response": []
+    }
+  ]
+}

@@ -43,6 +43,7 @@ def add_book(book_data: BookCreate, db: Session) -> Book:
         published_date=book_data.published_date or date.today(),
         current_status=book_data.current_status or "Available",
         shelf_number=book_data.shelf_number,
+        image_url=getattr(book_data, 'image_url', None),
     )
     db.add(new_book)
     try:

@@ -1,10 +1,12 @@
 import uvicorn
 from datetime import date, datetime
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from fastapi.staticfiles import StaticFiles
+import os
 
 from schemas import BookCreate, BookOut
 from schemas import BookStatusUpdate, BulkBookStatusUpdate
@@ -29,6 +31,26 @@ import auth_utils
 
 # Initialize FastAPI app with debug mode
 app = FastAPI(debug=True)
+
+# Ensure uploads directory exists and serve it as static files so frontend can load images
+uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
+
+@app.get("/uploads/", include_in_schema=False)
+def list_uploads():
+    """Return a simple JSON listing of files under the uploads directory.
+    This complements the StaticFiles mount which serves individual files but
+    returns 404 for a directory listing in browsers.
+    """
+    try:
+        files = os.listdir(uploads_dir)
+        files = [f for f in files if os.path.isfile(os.path.join(uploads_dir, f))]
+        urls = [f"/uploads/{f}" for f in files]
+        return {"count": len(urls), "files": urls}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Configure CORS as the first middleware
 origins = [
@@ -87,13 +109,14 @@ def on_startup():
 
 @app.get("/books/", response_model=List[BookOut])
 def list_books(
+    response: Response,
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None,
     search: Optional[str] = None,
     new_arrivals_since: Optional[date] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth_utils.get_current_active_user),
+    current_user: Optional[models.User] = Depends(auth_utils.get_optional_current_user),
 ):
     """
     Retrieve all books with pagination.
@@ -101,6 +124,12 @@ def list_books(
     - **limit**: Maximum number of records to return (for pagination)
     """
     books = get_books_filtered(db, skip=skip, limit=limit, status=status, search=search, new_arrivals_since=new_arrivals_since)
+    try:
+        total = db.query(models.Book).count()
+        response.headers["X-Total-Count"] = str(total)
+    except Exception:
+        # don't fail the endpoint if counting fails
+        pass
     return books
 
 
@@ -131,12 +160,98 @@ def health(db: Session = Depends(get_db)):
         return {"status": "error", "database": "disconnected", "detail": str(e)}
 
 @app.post("/books/", response_model=BookOut)
-def create_book(book: BookCreate, db: Session = Depends(get_db), _librarian: models.User = Depends(auth_utils.get_librarian_user)):
+async def create_book(
+    request: Request,
+    book: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    _librarian: models.User = Depends(auth_utils.get_librarian_user),
+):
+    """Create a book. Supports application/json body (BookCreate) or multipart/form-data with a
+    `book` field containing a JSON string and an optional `file` UploadFile. This avoids trying
+    to JSON-encode raw binary parts when validation fails for multipart requests.
+    """
+    import traceback
+    import json
     try:
-        return add_book(book, db)
+        # Determine if client sent JSON body
+        if book is None:
+            # Try to parse as JSON body (application/json)
+            try:
+                body = await request.json()
+            except Exception:
+                # Fallback: collect form fields (multipart without `book` field)
+                form = await request.form()
+                body = {k: v for k, v in form.items() if k != 'file'}
+        else:
+            # `book` is a JSON string field in multipart/form-data
+            try:
+                body = json.loads(book)
+            except Exception:
+                # If parsing fails, attempt to read other form fields
+                form = await request.form()
+                body = {k: v for k, v in form.items() if k != 'file'}
+
+        # Validate via Pydantic
+        book_obj = BookCreate(**body)
+
+        # Handle uploaded file: save locally, then upload to pCloud if configured.
+        image_url = None
+        if file is not None:
+            import tempfile, os
+            from pcloud_integration import is_configured, upload_file_to_pcloud
+            # write the upload to a temporary file
+            suffix = os.path.splitext(getattr(file, 'filename', '') or '')[1] or ''
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp_path = tmp.name
+                # read and write in chunks
+                while True:
+                    chunk = await file.read(1024 * 64)
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+            try:
+                if is_configured():
+                    try:
+                        print(f"pCloud: configured, uploading {tmp_path} (original filename={getattr(file, 'filename', None)})")
+                        image_url = upload_file_to_pcloud(tmp_path, filename=getattr(file, 'filename', None))
+                        print(f"pCloud: upload succeeded, url={image_url}")
+                    except Exception as upload_exc:
+                        # Log upload failure and fallback to local
+                        print(f"pCloud: upload failed: {upload_exc}")
+                        print("Falling back to local uploads storage")
+                        image_url = f"/uploads/{os.path.basename(tmp_path)}"
+                else:
+                    # Not configured: keep local path under uploads
+                    uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads')
+                    os.makedirs(uploads_dir, exist_ok=True)
+                    dest = os.path.join(uploads_dir, os.path.basename(tmp_path))
+                    import shutil
+                    try:
+                        # shutil.move handles cross-device moves by copying then removing source
+                        shutil.move(tmp_path, dest)
+                    except Exception:
+                        # fallback: copy and remove
+                        try:
+                            shutil.copy2(tmp_path, dest)
+                            os.remove(tmp_path)
+                        except Exception:
+                            # last resort: raise to surface error
+                            raise
+                    image_url = f"/uploads/{os.path.basename(dest)}"
+            finally:
+                try:
+                    await file.close()
+                except Exception:
+                    pass
+
+        # attach image_url (if any) to the book data
+        if image_url:
+            setattr(book_obj, 'image_url', image_url)
+
+        return add_book(book_obj, db)
     except Exception as e:
         # Log and convert to HTTP error so clients see a concise message
-        import traceback
         print("Error creating book:", e)
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -158,7 +273,7 @@ def search(
     published_after: Optional[date] = None,
     published_before: Optional[date] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth_utils.get_current_active_user),
+    current_user: Optional[models.User] = Depends(auth_utils.get_optional_current_user),
 ):
     try:
         print("Searching books with params:", {
@@ -190,7 +305,7 @@ def search(
 
 
 @app.get("/books/{book_id}", response_model=BookOut)
-def retrieve_book(book_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth_utils.get_current_active_user)):
+def retrieve_book(book_id: int, db: Session = Depends(get_db), current_user: Optional[models.User] = Depends(auth_utils.get_optional_current_user)):
     b = get_book_by_id(book_id, db)
     if not b:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -514,6 +629,22 @@ def report_inactive_members(months: int = 6, db: Session = Depends(get_db), _adm
 @app.get("/reports/fine-collection", response_model=List[FineCollection])
 def report_fine_collection(days: int = 30, db: Session = Depends(get_db), _admin: models.User = Depends(auth_utils.get_admin_user)):
     return fine_collection_report(db, days)
+
+
+@app.get("/debug/pcloud")
+def debug_pcloud():
+    """Return pCloud configuration status (no secrets). Useful to verify server env without exposing tokens."""
+    try:
+        from pcloud_integration import PCLOUD_ENDPOINT, PCLOUD_TOKEN, PCLOUD_FOLDER_ID
+        configured = bool(PCLOUD_ENDPOINT or PCLOUD_TOKEN)
+        return {
+            "configured": configured,
+            "using_custom_endpoint": bool(PCLOUD_ENDPOINT),
+            "has_token": bool(PCLOUD_TOKEN),
+            "folder_id": PCLOUD_FOLDER_ID or None,
+        }
+    except Exception as e:
+        return {"configured": False, "error": str(e)}
 
 
 # --- Member personal endpoints ---

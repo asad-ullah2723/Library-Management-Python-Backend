@@ -36,6 +36,7 @@ class Book(Base):
     current_status = Column(String, default="Available")  # Available / Issued / Reserved / Lost / Damaged
     shelf_number = Column(String, nullable=True)
     owner_id = Column(Integer, index=True)
+    image_url = Column(String, nullable=True)
 
 
 class Member(Base):

@@ -25,6 +25,7 @@ sql_statements = [
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS shelf_number VARCHAR(100);",
     # Keep schema aligned with SQLAlchemy model (models.Book.owner_id)
     "ALTER TABLE books ADD COLUMN IF NOT EXISTS owner_id INTEGER;",
+    "ALTER TABLE books ADD COLUMN IF NOT EXISTS image_url VARCHAR(1024);",
 ]
 
 print("Running book-fields migration...")
